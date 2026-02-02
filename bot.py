@@ -1,39 +1,44 @@
 import os
-from pyrogram import Client, filters
-from google.oauth2.credentials import Credentials
+import pickle
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH")
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
-app = Client("gdrive_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# ===== GOOGLE LOGIN FUNCTION =====
+def google_login():
+    creds = None
+    if os.path.exists('token.pickle'):
+        with open('token.pickle', 'rb') as token:
+            creds = pickle.load(token)
 
-def upload_to_drive(file_path, file_name):
-    creds = Credentials.from_authorized_user_file("token.json")
-    service = build("drive", "v3", credentials=creds)
+    if not creds:
+        flow = InstalledAppFlow.from_client_secrets_file(
+            'credentials.json', SCOPES)
+        creds = flow.run_local_server(port=8080)
 
-    file_metadata = {"name": file_name}
-    media = MediaFileUpload(file_path, resumable=True)
+        with open('token.pickle', 'wb') as token:
+            pickle.dump(creds, token)
 
-    file = service.files().create(
-        body=file_metadata,
-        media_body=media,
-        fields="id"
-    ).execute()
+    service = build('drive', 'v3', credentials=creds)
+    return service
 
-    return file.get("id")
+# ===== /login COMMAND =====
+async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🔐 Login link ban raha hai... browser open hoga")
 
-@app.on_message(filters.document | filters.video)
-def handle_file(client, message):
-    msg = message.reply_text("Downloading file...")
-    file_path = message.download()
+    service = google_login()
 
-    msg.edit("Uploading to Google Drive...")
-    file_id = upload_to_drive(file_path, os.path.basename(file_path))
+    await update.message.reply_text("✅ Gmail successfully connected!")
 
-    drive_link = f"https://drive.google.com/uc?export=download&id={file_id}"
-    msg.edit(f"Uploaded!\n\n{drive_link}")
+# ===== TELEGRAM BOT =====
+app = ApplicationBuilder().token("7036939850:AAELrXWVf7f7dYFoZ023mnMIdL8AhxZ33ZU").build()
 
-app.run()
+app.add_handler(CommandHandler("login", login))
+
+print("Bot running...")
+app.run_polling()
